@@ -34,20 +34,27 @@ void on_window_event(i3ipcConnection *conn, i3ipcWindowEvent *e, gpointer user)
 {
   i3WindowTitlePlugin* i3wmtp = (i3WindowTitlePlugin*) user;
 
+  if (e == NULL || e->change == NULL || i3wmtp == NULL || i3wmtp->title == NULL) {
+    return;
+  }
+
   if (strcmp(e->change, "close") == 0) {
     i3ipcCon* root = i3ipc_connection_get_tree(conn, NULL);
     i3ipcCon* focused = i3ipc_con_find_focused(root);
 
-    gtk_label_set_text(i3wmtp->title, i3ipc_con_get_name(focused));
+    gtk_label_set_text(i3wmtp->title, focused != NULL ? i3ipc_con_get_name(focused) : "");
 
-    g_object_unref(focused);
-    g_object_unref(root);
+    if (focused != NULL)
+      g_object_unref(focused);
+    if (root != NULL)
+      g_object_unref(root);
 
     return;
   }
 
   if (strcmp(e->change, "focus") == 0 || strcmp(e->change, "title") == 0) {
-    gtk_label_set_text(i3wmtp->title, i3ipc_con_get_name(e->container));
+    gtk_label_set_text(i3wmtp->title,
+                       e->container != NULL ? i3ipc_con_get_name(e->container) : "");
     return;
   }
 }
@@ -56,6 +63,9 @@ static
 void on_workspace_event(i3ipcConnection *conn, i3ipcWorkspaceEvent *e, gpointer user)
 {
   i3WindowTitlePlugin* i3wmtp = (i3WindowTitlePlugin*) user;
+
+  if (e == NULL || e->change == NULL || i3wmtp == NULL || i3wmtp->title == NULL)
+    return;
 
   if (strcmp(e->change, "init") == 0) {
     gtk_label_set_text(i3wmtp->title, "");
@@ -66,18 +76,33 @@ static
 void init_connection(i3WindowTitlePlugin* i3wmtp)
 {
   i3ipcCommandReply* reply = NULL;
+  if (i3wmtp == NULL || i3wmtp->title == NULL)
+    return;
+
   i3wmtp->conn = i3ipc_connection_new(NULL, NULL);
 
+  if (i3wmtp->conn == NULL) {
+    gtk_label_set_text(i3wmtp->title, "Unable to connect to i3wm");
+    return;
+  }
+
   reply = i3ipc_connection_subscribe(i3wmtp->conn, I3IPC_EVENT_WINDOW, NULL);
+
+  if (reply == NULL) {
+    gtk_label_set_text(i3wmtp->title, "Error subscribing to i3wm");
+    return;
+  }
 
   if (reply->success) {
     i3ipcCon* root = i3ipc_connection_get_tree(i3wmtp->conn, NULL);
     i3ipcCon* focused = i3ipc_con_find_focused(root);
 
-    gtk_label_set_text(i3wmtp->title, i3ipc_con_get_name(focused));
+    gtk_label_set_text(i3wmtp->title, focused != NULL ? i3ipc_con_get_name(focused) : "");
 
-    g_object_unref(focused);
-    g_object_unref(root);
+    if (focused != NULL)
+      g_object_unref(focused);
+    if (root != NULL)
+      g_object_unref(root);
 
     g_signal_connect_after(i3wmtp->conn, "window", G_CALLBACK(on_window_event), i3wmtp);
   } else {
@@ -87,6 +112,11 @@ void init_connection(i3WindowTitlePlugin* i3wmtp)
   i3ipc_command_reply_free(reply);
 
   reply = i3ipc_connection_subscribe(i3wmtp->conn, I3IPC_EVENT_WORKSPACE, NULL);
+
+  if (reply == NULL) {
+    gtk_label_set_text(i3wmtp->title, "Error subscribing to i3wm");
+    return;
+  }
 
   if (reply->success) {
     g_signal_connect_after(i3wmtp->conn, "workspace", G_CALLBACK(on_workspace_event), i3wmtp);
@@ -100,7 +130,8 @@ void init_connection(i3WindowTitlePlugin* i3wmtp)
 static
 void on_reconnect(GtkMenuItem* mitem, i3WindowTitlePlugin* i3wmtp)
 {
-  g_object_unref(i3wmtp->conn);
+  if (i3wmtp != NULL && i3wmtp->conn != NULL)
+    g_object_unref(i3wmtp->conn);
   init_connection(i3wmtp);
 }
 
@@ -108,7 +139,8 @@ static
 void i3free(XfcePanelPlugin *plugin, i3WindowTitlePlugin *i3wmtp)
 {
   gtk_widget_destroy(GTK_WIDGET(i3wmtp->title));
-  g_object_unref(i3wmtp->conn);
+  if (i3wmtp->conn != NULL)
+    g_object_unref(i3wmtp->conn);
   g_slice_free(i3WindowTitlePlugin, i3wmtp);
 }
 
